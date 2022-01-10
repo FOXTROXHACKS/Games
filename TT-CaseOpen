@@ -1,0 +1,21 @@
+--ClickGUI:
+loadstring(game:HttpGet("https://raw.githubusercontent.com/FOXTROXHACKS/UsefullScripts/main/Gui-Button-Clicker"))()
+
+--Locals for game:
+local CaseTab = game:GetService("Players").LocalPlayer.PlayerGui.Gui.Frames.Cases
+local close = CaseTab.Prompt.Close.Button
+local confirm = CaseTab.Prompt.Purchase.Button
+local Case = CaseTab.Standard:FindFirstChild(CaseName)
+local BuyCase = Case.Purchase.Button
+--Loop to wtv yeah.
+while wait(0.5) do
+    if _G.CaseOpen = true then
+        wait(0.2)
+            FireBtn1(BuyCase)
+        wait(0.3)
+            FireBtn1(confirm)
+        wait(0.1)
+            FireBtn1(close)
+        wait(2)
+    end
+end
