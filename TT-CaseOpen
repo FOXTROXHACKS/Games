@@ -1,3 +1,5 @@
+_G.CaseOpen = true --Toggle the auto Case Opener
+local CaseName = "Starter" --Name of the Case you want to auto open
 --ClickGUI:
 loadstring(game:HttpGet("https://raw.githubusercontent.com/FOXTROXHACKS/UsefullScripts/main/Gui-Button-Clicker"))()
 
@@ -9,7 +11,7 @@ local Case = CaseTab.Standard:FindFirstChild(CaseName)
 local BuyCase = Case.Purchase.Button
 --Loop to wtv yeah.
 while wait(0.5) do
-    if _G.CaseOpen = true then
+    if _G.CaseOpen == true then
         wait(0.2)
             FireBtn1(BuyCase)
         wait(0.3)
