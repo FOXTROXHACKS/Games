@@ -1,5 +1,7 @@
+--[[ -- SETTINGS
 _G.CaseOpen = true --Toggle the auto Case Opener
 local CaseName = "Starter" --Name of the Case you want to auto open
+]]
 --ClickGUI:
 loadstring(game:HttpGet("https://raw.githubusercontent.com/FOXTROXHACKS/UsefullScripts/main/Gui-Button-Clicker"))()
 
