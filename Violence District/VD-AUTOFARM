@@ -1,0 +1,182 @@
+--[[
+    CONFIGURACIÓN EXTERNA (Copia esto fuera del loadstring)
+    
+    getgenv().SPEED = 60
+    getgenv().HEALTH_THRESHOLD = 30
+    getgenv().SERVER_HOP_PLAYERS = 3
+    getgenv().WAIT_BEFORE_HOP = 4
+]]--
+task.spawn(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/FOXTROXHACKS/Games/refs/heads/main/Violence%20District/VD%20Gift%20Scanner.lua"))()
+end)
+
+-- === VARIABLES GLOBALES / DEFAULT ===
+local SPEED = getgenv().SPEED or 60
+local HEALTH_THRESHOLD = getgenv().HEALTH_THRESHOLD or 30
+local SERVER_HOP_PLAYERS = getgenv().SERVER_HOP_PLAYERS or 3
+local WAIT_BEFORE_HOP = getgenv().WAIT_BEFORE_HOP or 4
+
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local Vim = game:GetService("VirtualInputManager")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+local currentTween = nil
+local moviendo = false
+
+local function doServerHop()
+    local sfUrl = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(sfUrl))
+    end)
+
+    if success and result and result.data then
+        for _, server in ipairs(result.data) do
+            if server.playing >= SERVER_HOP_PLAYERS and server.playing < game.MaxPlayers and server.id ~= game.JobId then
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, player)
+                return
+            end
+        end
+    end
+    TeleportService:Teleport(game.PlaceId, player)
+end
+local function checkHealth()
+    local char = player.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if hum then
+        if hum.Health < HEALTH_THRESHOLD then
+            task.wait(2)
+            local v = workspace.CurrentCamera.ViewportSize
+            Vim:SendMouseButtonEvent(v.X/2, v.Y/2, 0, true, game, 0)
+            task.wait(0.1)
+            Vim:SendMouseButtonEvent(v.X/2, v.Y/2, 0, false, game, 0)
+            return false
+        end
+    end
+    return true
+end
+
+local function identificarEstructura()
+    local map = workspace:FindFirstChild("Map")
+    if not map then return nil, nil, "Map not found" end
+    local fGifts, fTrees = nil, nil
+    for _, eventFolder in ipairs(map:GetChildren()) do
+        for _, subFolder in ipairs(eventFolder:GetChildren()) do
+            if subFolder:FindFirstChild("GiftHandle", true) then fGifts = subFolder end
+            if subFolder:FindFirstChild("ChristmasTree", true) then fTrees = subFolder end
+        end
+        if fGifts or fTrees then break end 
+    end
+    if not fGifts then return nil, fTrees, "There's no gifts" end
+    if not fTrees then return fGifts, nil, "Tree wasn't found" end
+    return fGifts, fTrees, nil
+end
+
+local function obtenerRegaloMasCercano(carpetaGifts)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not carpetaGifts then return nil end
+    local regaloCercano, distMin = nil, math.huge
+    for _, regalo in ipairs(carpetaGifts:GetChildren()) do
+        if (regalo:IsA("Model") or regalo:IsA("BasePart")) and regalo.Name ~= "Restrictor" then
+            local dist = (hrp.Position - regalo:GetPivot().Position).Magnitude
+            if dist < distMin then 
+                distMin = dist 
+                regaloCercano = regalo 
+            end
+        end
+    end
+    return regaloCercano
+end
+
+local function obtenerArbolMasCercano(carpetaTrees)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not carpetaTrees then return nil end
+    local arbolCercano, distMin = nil, math.huge
+    for _, arbol in ipairs(carpetaTrees:GetChildren()) do
+        if (arbol:IsA("Model") or arbol:IsA("BasePart")) and arbol.Name ~= "Restrictor" then
+            local dist = (hrp.Position - arbol:GetPivot().Position).Magnitude
+            if dist < distMin then distMin = dist; arbolCercano = arbol end
+        end
+    end
+    return arbolCercano
+end
+
+local function moverA(objetivo, itemClave)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local punto = objetivo:FindFirstChild(itemClave, true) or objetivo
+    local targetCF = punto:GetPivot()
+    local dist = (hrp.Position - targetCF.Position).Magnitude
+    
+    currentTween = TweenService:Create(hrp, TweenInfo.new(dist / SPEED, Enum.EasingStyle.Linear), {
+        CFrame = targetCF + Vector3.new(0, 4, 0)
+    })
+    currentTween:Play()
+    return true, currentTween
+end
+local function ciclo()
+    if moviendo then return end
+    if not checkHealth() then return end 
+
+    local cGifts, cTrees, err = identificarEstructura()
+    
+    if err or not cGifts or #cGifts:GetChildren() == 0 then 
+        task.wait(WAIT_BEFORE_HOP)
+        local checkAgain = identificarEstructura()
+        if not checkAgain or #checkAgain:GetChildren() == 0 then
+            doServerHop()
+        end
+        return 
+    end
+
+    local regalo = obtenerRegaloMasCercano(cGifts)
+    if not regalo then return end
+
+    moviendo = true
+    
+    local ok1, res1 = moverA(regalo, "GiftHandle")
+    if ok1 then 
+        while res1.PlaybackState == Enum.PlaybackState.Playing do
+            if not checkHealth() then res1:Cancel(); moviendo = false; return end
+            task.wait(0.1)
+        end
+    end
+    
+    task.wait(0.5)
+    
+    local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(regalo:GetPivot().Position)
+    local x, y = screenPos.X, screenPos.Y
+    if not onScreen then
+        local v = workspace.CurrentCamera.ViewportSize
+        x, y = v.X/2, v.Y/2
+    end
+    
+    Vim:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    task.wait(0.2)
+    Vim:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    task.wait(1.5)
+    
+    local arbolDestino = obtenerArbolMasCercano(cTrees)
+    if arbolDestino then
+        local ok2, tw2 = moverA(arbolDestino, "ChristmasTree")
+        if ok2 then 
+            while tw2.PlaybackState == Enum.PlaybackState.Playing do
+                if not checkHealth() then tw2:Cancel(); moviendo = false; return end
+                task.wait(0.1)
+            end
+        end
+    end
+    
+    moviendo = false
+end
+
+-- === EJECUCIÓN ===
+task.spawn(function()
+    while true do
+        ciclo()
+        task.wait(1)
+    end
+          end)
+          
