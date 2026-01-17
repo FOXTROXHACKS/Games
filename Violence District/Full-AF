@@ -1,0 +1,252 @@
+--[[
+local SPEED = 60 
+local HEALTH_THRESHOLD = 30
+local DISTANCIA_CAM = 15
+local SENSIBILIDAD_CAM = 0.5
+local XRAY_ALPHA = 0.6
+]]
+
+-- === SCAN DE REGALOS (Externo) ===
+task.spawn(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/FOXTROXHACKS/Games/refs/heads/main/Violence%20District/VD%20Gift%20Scanner.lua"))()
+end)
+
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local Vim = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local Http = game:GetService("HttpService")
+local TPS = game:GetService("TeleportService")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local moviendo = false
+local rotX, rotY = 0, 0
+local objetosTransparentes = {}
+
+-- === LÓGICA DE CÁMARA Y X-RAY ===
+camera.CameraType = Enum.CameraType.Scriptable
+
+local function aplicarXRay(hrp)
+    for obj, trans in pairs(objetosTransparentes) do
+        if obj and obj.Parent then obj.Transparency = trans end
+    end
+    objetosTransparentes = {}
+
+    local origin = camera.CFrame.Position
+    local direction = hrp.Position - origin
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {player.Character}
+    params.FilterType = Enum.RaycastFilterType.Exclude
+
+    local result = workspace:Raycast(origin, direction, params)
+    if result and result.Instance and result.Instance:IsA("BasePart") then
+        local obj = result.Instance
+        if obj.CanCollide and obj.Transparency < 0.5 then
+            objetosTransparentes[obj] = obj.Transparency
+            obj.Transparency = XRAY_ALPHA
+        end
+    end
+end
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+            rotX = rotX - input.Delta.X * SENSIBILIDAD_CAM
+            rotY = math.clamp(rotY - input.Delta.Y * SENSIBILIDAD_CAM, -80, 80)
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local rotationCF = CFrame.Angles(0, math.rad(rotX), 0) * CFrame.Angles(math.rad(rotY), 0, 0)
+        local targetCFrame = CFrame.new(hrp.Position) * rotationCF * CFrame.new(0, 0, DISTANCIA_CAM)
+        camera.CFrame = CFrame.new(targetCFrame.Position, hrp.Position + Vector3.new(0, 2, 0))
+        aplicarXRay(hrp)
+    end
+end)
+
+-- === LÓGICA DE SERVER HOP ===
+local function buscarServidor()
+    local Api = "https://games.roblox.com/v1/games/"
+    local _place = game.PlaceId
+    local _servers = Api.._place.."/servers/Public?sortOrder=Asc&limit=100"
+
+    game:GetService("StarterGui"):SetCore("SendNotification",{
+        Title = "Buscando Servidor..",
+        Text = "Buscando: 2 a 3 jugadores",
+    })
+
+    local function ListServers(cursor)
+        local success, Raw = pcall(function()
+            return game:HttpGet(_servers .. ((cursor and "&cursor="..cursor) or ""))
+        end)
+        if not success then return nil end
+        return Http:JSONDecode(Raw)
+    end
+
+    local foundServer = nil
+    local NextCursor = nil
+
+    repeat
+        local Servers = ListServers(NextCursor)
+        if Servers and Servers.data then
+            for _, s in ipairs(Servers.data) do
+                if s.playing >= 2 and s.playing <= 3 and s.id ~= game.JobId then
+                    foundServer = s
+                    break
+                end
+            end
+            NextCursor = Servers.nextPageCursor
+        else
+            break
+        end
+    until foundServer or not NextCursor
+
+    if foundServer then
+        game:GetService("StarterGui"):SetCore("SendNotification",{
+            Title = "¡Servidor Encontrado!",
+            Text = "Jugadores: " .. foundServer.playing .. ". Saltando...",
+        })
+        task.wait(0.5)
+        TPS:TeleportToPlaceInstance(_place, foundServer.id, player)
+    else
+        game:GetService("StarterGui"):SetCore("SendNotification",{
+            Title = "Sin resultados",
+            Text = "No hay servidores con 2-3 personas.",
+        })
+    end
+end
+
+local function ejecutarServerHop()
+    game:GetService("StarterGui"):SetCore("SendNotification",{
+        Title = "Buscando Servidor..",
+        Text = "Buscando: 2 a 3 jugadores",
+    })
+    task.wait(3) -- Espera inicial de 3 segundos
+    buscarServidor()
+    task.wait(3) -- Espera de seguridad de 3 segundos
+    buscarServidor() -- Reintento por si falló
+end
+
+-- === FUNCIONES DEL AUTOFARM ===
+local function checkHealth()
+    local char = player.Character
+    local hum = char and char:FindFirstChild("Humanoid")
+    if hum and hum.Health < HEALTH_THRESHOLD then
+        task.wait(2)
+        local v = camera.ViewportSize
+        Vim:SendMouseButtonEvent(v.X/2, v.Y/2, 0, true, game, 0)
+        task.wait(0.1)
+        Vim:SendMouseButtonEvent(v.X/2, v.Y/2, 0, false, game, 0)
+        return false
+    end
+    return true
+end
+
+local function identificarEstructura()
+    local map = workspace:FindFirstChild("Map")
+    if not map then return nil, nil end
+    local fGifts, fTrees = nil, nil
+    for _, eventFolder in ipairs(map:GetChildren()) do
+        for _, subFolder in ipairs(eventFolder:GetChildren()) do
+            if subFolder:FindFirstChild("GiftHandle", true) then fGifts = subFolder end
+            if subFolder:FindFirstChild("ChristmasTree", true) then fTrees = subFolder end
+        end
+        if fGifts or fTrees then break end 
+    end
+    return fGifts, fTrees
+end
+
+local function obtenerCercano(carpeta)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not carpeta then return nil end
+    local objetivo, distMin = nil, math.huge
+    for _, item in ipairs(carpeta:GetChildren()) do
+        if item:IsA("Model") or item:IsA("BasePart") then
+            if item.Name ~= "Restrictor" then
+                local dist = (hrp.Position - item:GetPivot().Position).Magnitude
+                if dist < distMin then distMin = dist; objetivo = item end
+            end
+        end
+    end
+    return objetivo
+end
+
+local function moverA(objetivo, itemClave)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local punto = objetivo:FindFirstChild(itemClave, true) or objetivo
+    local targetCF = punto:GetPivot()
+    local dist = (hrp.Position - targetCF.Position).Magnitude
+    local tween = TweenService:Create(hrp, TweenInfo.new(dist / SPEED, Enum.EasingStyle.Linear), {
+        CFrame = targetCF + Vector3.new(0, 4, 0)
+    })
+    tween:Play()
+    return true, tween
+end
+
+-- === CICLO DE RECOLECCIÓN ===
+local function ciclo()
+    if moviendo then return end
+    if not checkHealth() then return end 
+
+    local cGifts, cTrees = identificarEstructura()
+    
+    -- Si no hay carpeta o no hay hijos (regalos), iniciamos Server Hop
+    if not cGifts or #cGifts:GetChildren() == 0 then 
+        ejecutarServerHop() 
+        return 
+    end
+
+    local regalo = obtenerCercano(cGifts)
+    if not regalo then 
+        ejecutarServerHop() -- Si no encuentra un regalo válido
+        return 
+    end
+
+    moviendo = true
+    
+    local ok1, res1 = moverA(regalo, "GiftHandle")
+    if ok1 then 
+        while res1.PlaybackState == Enum.PlaybackState.Playing do
+            if not checkHealth() then res1:Cancel(); moviendo = false; return end
+            task.wait(0.1)
+        end
+    end
+    
+    task.wait(0.5)
+    
+    local screenPos, onScreen = camera:WorldToViewportPoint(regalo:GetPivot().Position)
+    local x, y = screenPos.X, screenPos.Y
+    if not onScreen then x, y = camera.ViewportSize.X/2, camera.ViewportSize.Y/2 end
+    
+    Vim:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    task.wait(0.2)
+    Vim:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    task.wait(1.5)
+    
+    local arbol = obtenerCercano(cTrees)
+    if arbol then
+        local ok2, tw2 = moverA(arbol, "ChristmasTree")
+        if ok2 then 
+            while tw2.PlaybackState == Enum.PlaybackState.Playing do
+                if not checkHealth() then tw2:Cancel(); moviendo = false; return end
+                task.wait(0.1)
+            end
+        end
+    end
+    moviendo = false
+end
+
+-- Inicio
+task.spawn(function()
+    while true do
+        ciclo()
+        task.wait(1)
+    end
+end)
